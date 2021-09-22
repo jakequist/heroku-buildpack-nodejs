@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 
 BUILD_DIR=${1:-}
+if [ ! -f "${ENV_DIR}/APP_BASE" ]; then
+    echo "APP_BASE was not set. Aborting"
+    exit 1
+fi
+ENV_DIR=${3:-}
+
+APP_BASE="$(cat "${ENV_DIR}/APP_BASE")"
+APP_DIR="$APP_DIR/$APP_BASE"
+
 if yarn --version > /dev/null 2>&1; then
-  cd "$BUILD_DIR" && yarn test
+  cd "$APP_DIR" && yarn test
 else
-  cd "$BUILD_DIR" && npm test
+  cd "$APP_DIR" && npm test
 fi

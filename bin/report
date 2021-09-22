@@ -8,7 +8,16 @@ set -o pipefail   # don't ignore exit codes when piping output
 
 BUILD_DIR=${1:-}
 CACHE_DIR=${2:-}
+ENV_DIR=${3:-}
+
 BP_DIR=$(cd "$(dirname "${0:-}")"; cd ..; pwd)
+
+if [ ! -f "${ENV_DIR}/APP_BASE" ]; then
+    echo "APP_BASE was not set. Aborting"
+    exit 1
+fi
+APP_BASE="$(cat "${ENV_DIR}/APP_BASE")"
+APP_DIR="$APP_DIR/$APP_BASE"
 
 ### Load dependencies
 
@@ -43,10 +52,10 @@ source "$BP_DIR/lib/features.sh"
 # shellcheck source=lib/builddata.sh
 source "$BP_DIR/lib/builddata.sh"
 
-export PATH="$BUILD_DIR/.heroku/node/bin:$BUILD_DIR/.heroku/yarn/bin":$PATH
+export PATH="$APP_DIR/.heroku/node/bin:$APP_DIR/.heroku/yarn/bin":$PATH
 
 meta_init "$CACHE_DIR"
-features_init "nodejs" "$BUILD_DIR" "$CACHE_DIR" "$BP_DIR/features"
+features_init "nodejs" "$APP_DIR" "$CACHE_DIR" "$BP_DIR/features"
 
 # a place to build up the output YAML structure
 output=$(mktemp -t bin-reportXXXXXX)
@@ -84,16 +93,16 @@ has_binary_installed "npm" && kv_pair_string "npm_version" "$(npm --version)"
 has_binary_installed "yarn" && kv_pair_string "yarn_version" "$(yarn --version)"
 
 # what versions were requested
-kv_pair_string "node_version_request" "$(read_json "$BUILD_DIR/package.json" ".engines.node")"
-kv_pair_string "npm_version_request" "$(read_json "$BUILD_DIR/package.json" ".engines.npm")"
-kv_pair_string "yarn_version_request" "$(read_json "$BUILD_DIR/package.json" ".engines.yarn")"
+kv_pair_string "node_version_request" "$(read_json "$APP_DIR/package.json" ".engines.node")"
+kv_pair_string "npm_version_request" "$(read_json "$APP_DIR/package.json" ".engines.npm")"
+kv_pair_string "yarn_version_request" "$(read_json "$APP_DIR/package.json" ".engines.yarn")"
 
 # build scripts
-kv_pair_string "start_script" "$(read_json "$BUILD_DIR/package.json" ".scripts[\"start\"]")"
-kv_pair_string "build_script" "$(read_json "$BUILD_DIR/package.json" ".scripts[\"build\"]")"
-kv_pair_string "postinstall_script" "$(read_json "$BUILD_DIR/package.json" ".scripts[\"postinstall\"]")"
-kv_pair_string "heroku_prebuild_script" "$(read_json "$BUILD_DIR/package.json" ".scripts[\"heroku-prebuild\"]")"
-kv_pair_string "heroku_postbuild_script" "$(read_json "$BUILD_DIR/package.json" ".scripts[\"heroku-postbuild\"]")"
+kv_pair_string "start_script" "$(read_json "$APP_DIR/package.json" ".scripts[\"start\"]")"
+kv_pair_string "build_script" "$(read_json "$APP_DIR/package.json" ".scripts[\"build\"]")"
+kv_pair_string "postinstall_script" "$(read_json "$APP_DIR/package.json" ".scripts[\"postinstall\"]")"
+kv_pair_string "heroku_prebuild_script" "$(read_json "$APP_DIR/package.json" ".scripts[\"heroku-prebuild\"]")"
+kv_pair_string "heroku_postbuild_script" "$(read_json "$APP_DIR/package.json" ".scripts[\"heroku-postbuild\"]")"
 kv_pair "build_script_time" "$(meta_get "build-script-time")"
 kv_pair "build_script_memory" "$(meta_get "build-script-memory")"
 kv_pair "postinstall_script_time" "$(meta_get "postinstall-script-time")"
@@ -110,11 +119,11 @@ kv_pair_string "package_manager" "$(meta_get "node-package-manager")"
 kv_pair "lock_file" "$(meta_get "has-node-lock-file")"
 
 # does this project use "workspaces"?
-kv_pair "uses_workspaces" "$(json_has_key "$BUILD_DIR/package.json" "workspaces")"
+kv_pair "uses_workspaces" "$(json_has_key "$APP_DIR/package.json" "workspaces")"
 # what workspaces are defined? Logs as: `["packages/*","a","b"]`
-kv_pair_string "workspaces" "$(read_json "$BUILD_DIR/package.json" ".workspaces")"
+kv_pair_string "workspaces" "$(read_json "$APP_DIR/package.json" ".workspaces")"
 # count # of js, jsx, ts, coffee, vue, and html files to approximate project size, exclude any files in node_modules
-kv_pair "num_project_files" "$(find "$BUILD_DIR" -name '*.js' -o -name '*.ts' -o -name '*.jsx' -o -name '*.coffee' -o -name '*.vue' -o -name '*.html' | grep -cv node_modules | tr -d '[:space:]')"
+kv_pair "num_project_files" "$(find "$APP_DIR" -name '*.js' -o -name '*.ts' -o -name '*.jsx' -o -name '*.coffee' -o -name '*.vue' -o -name '*.html' | grep -cv node_modules | tr -d '[:space:]')"
 # measure how large node_modules is on disk
 kv_pair "node_modules_size" "$(measure_size)"
 
