@@ -1,8 +1,21 @@
 #!/usr/bin/env bash
 # bin/release <build-dir>
 
+echo "params"
+echo $1
+echo $2
+echo $3
+
+echo "envs"
+env
+
+echo "which npm"
+which npm 
+
+
+
 cat << EOF
 addons: []
 default_process_types:
-  web: npm start
+  web: cd sms-next && npm start
 EOF
