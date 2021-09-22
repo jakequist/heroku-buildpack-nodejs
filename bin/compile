@@ -20,6 +20,13 @@ CACHE_DIR=${2:-}
 ENV_DIR=${3:-}
 BP_DIR=$(cd "$(dirname "${0:-}")"; cd ..; pwd)
 
+if [ ! -f "${ENV_DIR}/APP_BASE" ]; then
+    echo "APP_BASE was not set. Aborting"
+    exit 1
+fi
+APP_BASE="$(cat "${ENV_DIR}/APP_BASE")"
+APP_DIR="$BUILD_DIR/$APP_BASE"
+
 ### Load dependencies
 
 # shellcheck source=lib/vendor/stdlib_v7.sh
@@ -55,7 +62,7 @@ source "$BP_DIR/lib/builddata.sh"
 # shellcheck source=lib/yarn-2.sh
 source "$BP_DIR/lib/yarn-2.sh"
 
-export PATH="$BUILD_DIR/.heroku/node/bin:$BUILD_DIR/.heroku/yarn/bin":$PATH
+export PATH="$APP_DIR/.heroku/node/bin:$APP_DIR/.heroku/yarn/bin":$PATH
 
 LOG_FILE=$(mktemp -t node-build-log.XXXXX)
 echo "" > "$LOG_FILE"
@@ -69,14 +76,14 @@ handle_failure() {
   header "Build failed"
   fail_yarn_outdated "$LOG_FILE"
   fail_yarn_lockfile_outdated "$LOG_FILE"
-  fail_node_install "$LOG_FILE" "$BUILD_DIR"
-  fail_yarn_install "$LOG_FILE" "$BUILD_DIR"
+  fail_node_install "$LOG_FILE" "$APP_DIR"
+  fail_yarn_install "$LOG_FILE" "$APP_DIR"
   fail_invalid_semver "$LOG_FILE"
   log_other_failures "$LOG_FILE"
-  warn_aws_proxy "$BUILD_DIR"
+  warn_aws_proxy "$APP_DIR"
   warn_untracked_dependencies "$LOG_FILE"
   warn_angular_resolution "$LOG_FILE"
-  warn_missing_devdeps "$LOG_FILE" "$BUILD_DIR"
+  warn_missing_devdeps "$LOG_FILE" "$APP_DIR"
   warn_econnreset "$LOG_FILE"
   log_meta_data >> "$BUILDPACK_LOG_FILE"
   failure_message | output "$LOG_FILE"
@@ -94,44 +101,44 @@ meta_set "build-step" "init"
 
 ### Check initial state
 
-[ -e "$BUILD_DIR/node_modules" ] && PREBUILD=true || PREBUILD=false
-[ -f "$BUILD_DIR/yarn.lock" ] && YARN=true || YARN=false
-[ -f "$BUILD_DIR/package-lock.json" ] && NPM_LOCK=true || NPM_LOCK=false
-YARN_2=$(detect_yarn_2 "$YARN" "$BUILD_DIR")
+[ -e "$APP_DIR/node_modules" ] && PREBUILD=true || PREBUILD=false
+[ -f "$APP_DIR/yarn.lock" ] && YARN=true || YARN=false
+[ -f "$APP_DIR/package-lock.json" ] && NPM_LOCK=true || NPM_LOCK=false
+YARN_2=$(detect_yarn_2 "$YARN" "$APP_DIR")
 
 ### Save build info
-features_init "nodejs" "$BUILD_DIR" "$CACHE_DIR" "$BP_DIR/features"
+features_init "nodejs" "$APP_DIR" "$CACHE_DIR" "$BP_DIR/features"
 log_initial_state
 generate_uuids
 
 ### Failures that should be caught immediately
 
-fail_dot_heroku "$BUILD_DIR"
-fail_dot_heroku_node "$BUILD_DIR"
-fail_invalid_package_json "$BUILD_DIR"
-fail_multiple_lockfiles "$BUILD_DIR"
-fail_iojs_unsupported "$BUILD_DIR"
-warn_prebuilt_modules "$BUILD_DIR"
-warn_missing_package_json "$BUILD_DIR"
+fail_dot_heroku "$APP_DIR"
+fail_dot_heroku_node "$APP_DIR"
+fail_invalid_package_json "$APP_DIR"
+fail_multiple_lockfiles "$APP_DIR"
+fail_iojs_unsupported "$APP_DIR"
+warn_prebuilt_modules "$APP_DIR"
+warn_missing_package_json "$APP_DIR"
 
 ### Gather more project information
 
 # we know that package.json is valid json, and can pull more data out
-log_project_info "$BUILD_DIR"
+log_project_info "$APP_DIR"
 
 ### Compile
 
 create_env() {
-  write_profile "$BP_DIR" "$BUILD_DIR"
-  write_export "$BP_DIR" "$BUILD_DIR"
+  write_profile "$BP_DIR" "$APP_DIR"
+  write_export "$BP_DIR" "$APP_DIR"
   export_env_dir "$ENV_DIR"
   create_default_env "$YARN"
 }
 
 header "Creating runtime environment" | output "$LOG_FILE"
 
-mkdir -p "$BUILD_DIR/.heroku/node/"
-cd "$BUILD_DIR"
+mkdir -p "$APP_DIR/.heroku/node/"
+cd "$APP_DIR"
 create_env # can't pipe the whole thing because piping causes subshells, preventing exports
 list_node_config | output "$LOG_FILE"
 create_build_env
@@ -145,35 +152,35 @@ export YARN_CACHE_FOLDER NPM_CONFIG_CACHE
 export VENDOR_PATH
 
 if [[ "$YARN_2" == "true" ]]; then
-  if [[ "$NODE_MODULES_CACHE" == "true" ]]  && ! node_modules_enabled "$BUILD_DIR"; then
+  if [[ "$NODE_MODULES_CACHE" == "true" ]]  && ! node_modules_enabled "$APP_DIR"; then
     warn "
     The buildpack won't cache the dependencies in .yarn/cache. Since you're using Yarn 2 and Plug'n'Play, you will need to customize your cache or unset NODE_MODULES_CACHE." "https://devcenter.heroku.com/articles/migrating-to-yarn-2#disable-dependency-caching"
   fi
 
-  if [[ -f "$BUILD_DIR/.npmrc" ]]; then
+  if [[ -f "$APP_DIR/.npmrc" ]]; then
     warn "There is an existing .npmrc file that will not be used. All configurations are read from the .yarnrc.yml file." "https://devcenter.heroku.com/articles/migrating-to-yarn-2"
   fi
 
-  if [[ -f "$BUILD_DIR/.yarnrc" ]]; then
+  if [[ -f "$APP_DIR/.yarnrc" ]]; then
     warn "There is an existing .yarnrc file that will not be used. All configurations are read from the .yarnrc.yml file." "https://devcenter.heroku.com/articles/migrating-to-yarn-2"
   fi
 
-  if has_yarn_cache "$BUILD_DIR"; then
-    YARN_CACHE_FOLDER="$BUILD_DIR/.yarn/cache"
+  if has_yarn_cache "$APP_DIR"; then
+    YARN_CACHE_FOLDER="$APP_DIR/.yarn/cache"
   fi
 
   ### Configure Yarn 2
   # fail for no yarnrc.yml
-  fail_missing_yarnrc_yml "$BUILD_DIR"
+  fail_missing_yarnrc_yml "$APP_DIR"
 
   # get yarn_path
-  VENDOR_PATH=$(get_yarn_path "$BUILD_DIR")
+  VENDOR_PATH=$(get_yarn_path "$APP_DIR")
 
   # fail for no yarnPath in rc
-  fail_missing_yarn_path "$BUILD_DIR" "$VENDOR_PATH"
+  fail_missing_yarn_path "$APP_DIR" "$VENDOR_PATH"
 
   # fail for missing yarn in .yarn/releases
-  fail_missing_yarn_vendor "$BUILD_DIR" "$VENDOR_PATH"
+  fail_missing_yarn_vendor "$APP_DIR" "$VENDOR_PATH"
 fi
 
 [[ $(features_get "cache-native-yarn-cache") == "false" ]] && USE_YARN_CACHE=false
@@ -185,9 +192,9 @@ fi
 install_bins() {
   local node_engine npm_engine yarn_engine npm_version node_version
 
-  node_engine=$(read_json "$BUILD_DIR/package.json" ".engines.node")
-  npm_engine=$(read_json "$BUILD_DIR/package.json" ".engines.npm")
-  yarn_engine=$(read_json "$BUILD_DIR/package.json" ".engines.yarn")
+  node_engine=$(read_json "$APP_DIR/package.json" ".engines.node")
+  npm_engine=$(read_json "$APP_DIR/package.json" ".engines.npm")
+  yarn_engine=$(read_json "$APP_DIR/package.json" ".engines.yarn")
 
   if [[ "$YARN_2" == "true" && -n "$yarn_engine" ]]; then
     warn "You don't need to specify Yarn engine. Heroku will install the latest Yarn 1.x, so that per project version can be used. More information here: https://yarnpkg.com/getting-started/install#global-install"
@@ -208,10 +215,10 @@ install_bins() {
   warn_node_engine "$node_engine"
 
   meta_set "build-step" "install-nodejs"
-  monitor "install-node-binary" install_nodejs "$node_engine" "$BUILD_DIR/.heroku/node"
+  monitor "install-node-binary" install_nodejs "$node_engine" "$APP_DIR/.heroku/node"
 
   meta_set "build-step" "install-npm"
-  monitor "install-npm-binary" install_npm "$npm_engine" "$BUILD_DIR/.heroku/node" $NPM_LOCK
+  monitor "install-npm-binary" install_npm "$npm_engine" "$APP_DIR/.heroku/node" $NPM_LOCK
 
   node_version="$(node --version)"
   mcount "version.node.$node_version"
@@ -222,7 +229,7 @@ install_bins() {
   # only install using yarn if there is a yarn.lock file
   if $YARN || [ -n "$yarn_engine" ]; then
     meta_set "build-step" "install-yarn"
-    monitor "install-yarn-binary" install_yarn "$BUILD_DIR/.heroku/yarn" "$yarn_engine"
+    monitor "install-yarn-binary" install_yarn "$APP_DIR/.heroku/yarn" "$yarn_engine"
   fi
 
   if $YARN; then
@@ -248,14 +255,14 @@ restore_cache() {
   restore_cache_start_time=$(nowms)
 
   cache_status="$(get_cache_status "$CACHE_DIR")"
-  cache_directories="$(get_cache_directories "$BUILD_DIR")"
+  cache_directories="$(get_cache_directories "$APP_DIR")"
 
   if $YARN; then
     if $PREBUILD && [[ "$SKIP_NODE_MODULES_CHECK" == "true" ]]; then
       echo "Keeping existing node_modules because SKIP_NODE_MODULES_CHECK=${SKIP_NODE_MODULES_CHECK}"
     elif $PREBUILD; then
       warn "node_modules checked into source control" "https://devcenter.heroku.com/articles/node-best-practices#only-git-the-important-bits"
-      rm -rf "$BUILD_DIR/node_modules"
+      rm -rf "$APP_DIR/node_modules"
     fi
   fi
 
@@ -265,9 +272,9 @@ restore_cache() {
   elif [[ "$cache_status" == "valid" ]]; then
     header "Restoring cache"
     if [[ "$cache_directories" == "" ]]; then
-      restore_default_cache_directories "$BUILD_DIR" "$CACHE_DIR" "$YARN_CACHE_FOLDER"
+      restore_default_cache_directories "$APP_DIR" "$CACHE_DIR" "$YARN_CACHE_FOLDER"
     else
-      restore_custom_cache_directories "$BUILD_DIR" "$CACHE_DIR" "$cache_directories"
+      restore_custom_cache_directories "$APP_DIR" "$CACHE_DIR" "$cache_directories"
     fi
   elif [[ "$cache_status" == "new-signature" ]]; then
     header "Restoring cache"
@@ -301,33 +308,33 @@ build_dependencies() {
   cache_status="$(get_cache_status "$CACHE_DIR")"
   start=$(nowms)
   if [[ "$YARN_2" == "true" ]]; then
-    yarn_2_install "$BUILD_DIR"
+    yarn_2_install "$APP_DIR"
   elif $YARN; then
-    yarn_node_modules "$BUILD_DIR"
+    yarn_node_modules "$APP_DIR"
   elif $PREBUILD; then
     echo "Prebuild detected (node_modules already exists)"
-    npm_rebuild "$BUILD_DIR"
+    npm_rebuild "$APP_DIR"
   else
-    npm_node_modules "$BUILD_DIR"
+    npm_node_modules "$APP_DIR"
   fi
 
   mtime "modules.time.cache.$cache_status" "${start}"
 
   meta_set "build-step" "build-script"
   header "Build"
-  run_build_script "$BUILD_DIR"
+  run_build_script "$APP_DIR"
 }
 
 meta_set "build-step" "install-dependencies"
-log_build_scripts "$BUILD_DIR"
-run_prebuild_script "$BUILD_DIR" | output "$LOG_FILE"
+log_build_scripts "$APP_DIR"
+run_prebuild_script "$APP_DIR" | output "$LOG_FILE"
 header "Installing dependencies" | output "$LOG_FILE"
 build_dependencies | output "$LOG_FILE"
 
 cache_build() {
   local cache_directories cache_build_start_time
   cache_build_start_time=$(nowms)
-  cache_directories="$(get_cache_directories "$BUILD_DIR")"
+  cache_directories="$(get_cache_directories "$APP_DIR")"
 
   clear_cache "$CACHE_DIR"
   if ! ${NODE_MODULES_CACHE:-true}; then
@@ -336,10 +343,10 @@ cache_build() {
     :
   elif [[ "$cache_directories" == "" ]]; then
     header "Caching build"
-    save_default_cache_directories "$BUILD_DIR" "$CACHE_DIR" "$YARN_CACHE_FOLDER"
+    save_default_cache_directories "$APP_DIR" "$CACHE_DIR" "$YARN_CACHE_FOLDER"
   else
     header "Caching build"
-    save_custom_cache_directories "$BUILD_DIR" "$CACHE_DIR" "$cache_directories"
+    save_custom_cache_directories "$APP_DIR" "$CACHE_DIR" "$cache_directories"
   fi
   save_signature "$CACHE_DIR"
   meta_time "save-cache-time" "$cache_build_start_time"
@@ -347,9 +354,9 @@ cache_build() {
 
 prune_devdependencies() {
   if $YARN || $YARN_2; then
-    yarn_prune_devdependencies "$BUILD_DIR" "$YARN_CACHE_FOLDER"
+    yarn_prune_devdependencies "$APP_DIR" "$YARN_CACHE_FOLDER"
   else
-    npm_prune_devdependencies "$BUILD_DIR"
+    npm_prune_devdependencies "$APP_DIR"
   fi
 }
 
@@ -359,7 +366,7 @@ if $YARN_2; then
   meta_set "build-step" "prune-dependencies"
   header "Pruning devDependencies" | output "$LOG_FILE"
   prune_devdependencies | output "$LOG_FILE"
-elif "$YARN" && "$USE_YARN_CACHE" && [[ "$(get_cache_directories "$BUILD_DIR")" == "" ]]; then
+elif "$YARN" && "$USE_YARN_CACHE" && [[ "$(get_cache_directories "$APP_DIR")" == "" ]]; then
   meta_set "build-step" "prune-dependencies"
   header "Pruning devDependencies" | output "$LOG_FILE"
   prune_devdependencies | output "$LOG_FILE"
@@ -374,11 +381,11 @@ else
 fi
 
 meta_set "build-step" "cleanup-script"
-run_cleanup_script "$BUILD_DIR" | output "$LOG_FILE"
+run_cleanup_script "$APP_DIR" | output "$LOG_FILE"
 
 summarize_build() {
   if $NODE_VERBOSE; then
-    list_dependencies "$BUILD_DIR"
+    list_dependencies "$APP_DIR"
   fi
 
   mmeasure 'modules.size' "$(measure_size)"
@@ -386,7 +393,7 @@ summarize_build() {
 }
 
 meta_set "build-step" "install-metrics-plugin"
-install_plugin "$BP_DIR" "$BUILD_DIR"
+install_plugin "$BP_DIR" "$APP_DIR"
 
 meta_set "build-step" "summarize"
 header "Build succeeded!" | output "$LOG_FILE"
@@ -395,7 +402,7 @@ summarize_build | output "$LOG_FILE"
 meta_set "node-build-success" "true"
 meta_time "build-time" "$build_start_time"
 
-warn_no_start "$BUILD_DIR"
+warn_no_start "$APP_DIR"
 warn_unmet_dep "$LOG_FILE"
 warn_old_npm_lockfile $NPM_LOCK
 
